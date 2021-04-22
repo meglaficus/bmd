@@ -95,6 +95,6 @@ python test_unet_and_resnet.py --test_images_dir /xxx/dir3/ --unet_model /yyy/un
 The code for the RICAP function was quoted from the repository of [koshian2](https://github.com/koshian2/keras-ricap), with some edits.
 
 ## License
-Sorry, there is no license offered for this project. This means I do not give you permission to copy or reuse the code in this project. However, this is not applied when you aim to retest the experiment of the paper. Commercial use is strictly prohibited.
+Sorry, there is no license offered for this project. This means I do not give you permission to copy or reuse the code in this project. However, this limitation is not applied when you aim to retest the experiment of the paper. Commercial use is strictly prohibited.
 
 [https://choosealicense.com/no-permission/](https://choosealicense.com/no-permission/)
