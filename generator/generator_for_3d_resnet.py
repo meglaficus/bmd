@@ -196,7 +196,7 @@ class MyGenerator(Sequence):
         self.ch = ch
 
         self.num_of_class = num_of_class
-        self.num_batches_per_epoch = self.length // batch_size - 1  # mixupの際に端数が出ないように、最後の1バッチは一旦捨てておく
+        self.num_batches_per_epoch = self.length // batch_size - 1  # discard last one patch
 
         self.on_epoch_end()
 
