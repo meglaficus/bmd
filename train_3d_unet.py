@@ -3,6 +3,8 @@ from keras import backend as K
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger
 from keras.models import load_model
 from keras.utils import plot_model
+import numpy as np
+import json
 
 from generator.generator_for_3d_unet import MyGenerator
 from build_models.unet_3d import build_unet
@@ -53,29 +55,35 @@ def focal_tversky_loss_08(y_true, y_pred):
 ## Training and Testing ##
 ##########################
 
-def train(train_gen, val_gen, args):
+def train(train_gen, val_gen, fold, args):
 
     LR = 0.0005
     E = 360
-    SPE = 1/240
+    B = args.batch_size
 
     input_shape = train_gen.get_input_shape()
 
     model = build_unet(input_shape)
 
     model.summary()
-    path = args.results_dir + "model.png"
+    os.makedirs(os.path.join(args.results_dir, f'fold_{fold}'), exist_ok=True)
+    
+    path = os.path.join(args.results_dir, f'fold_{fold}', "model.png")
     plot_model(model, to_file=path, show_shapes=True, show_layer_names=True)
-    print("Save model.png, done.")
 
-    model.compile(loss=focal_tversky_loss_08, optimizer=Adam(lr=LR), metrics=[dc, se])
+    model.compile(loss=focal_tversky_loss_08, optimizer=Adam(learning_rate=LR), metrics=[dc, se])
 
     cs = []
-    csvlog_path = args.results_dir + "log/" + args.dt + ".csv"
+    csvlog_path = os.path.join(args.results_dir, 'fold_{fold}', "log", args.dt + ".csv")
     csv_logger = CSVLogger(csvlog_path)
     cs = cs + [csv_logger]
 
-    mc = ModelCheckpoint(filepath=args.model_path, monitor="val_loss", save_best_only=True)
+    time = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    print(args.dt)
+
+    model_path = args.results_dir + f'/fold_{fold}' + "/models/" + time + ".h5"
+    
+    mc = ModelCheckpoint(filepath=model_path, monitor="val_loss", save_best_only=True)
     cs = cs + [mc]
 
     def step_decay(epoch):
@@ -88,8 +96,10 @@ def train(train_gen, val_gen, args):
 
     lrs = LearningRateScheduler(step_decay)
     cs = cs + [lrs]
+    
+    steps_per_epoch = int( np.ceil(input_shape[0] / B) )
 
-    model.fit_generator(train_gen, epochs=E, steps_per_epoch=len(train_gen) * SPE,
+    model.fit(train_gen, epochs=E, steps_per_epoch=steps_per_epoch,
                                        validation_data=val_gen, callbacks=cs, verbose=1)
     K.clear_session()
 
@@ -112,32 +122,47 @@ def run(args):
     ## Prepare train_gen and test_gen ##
     ####################################
 
-    B = 6
+    dataset_path = os.path.join(args.root_dir, args.val_dir)
+    B = args.batch_size
+    
+    json_path = os.path.join(args.root_dir, args.folds_path)
+    
+    with open(json_path, 'r') as file:
+        folds = json.load(file)
+    
+    # for each of 5 folds in split
+    for fold in range (5):
+        train_ids = folds[fold]['train']
+        val_ids = folds[fold]['val']
+        
+        train_ct_list = []
+        train_lb_list = []
+        for train_id in train_ids:
+            train_ct_list += glob.glob(os.path.join(dataset_path,train_id, "*ct.npy"))
+            train_lb_list += glob.glob(os.path.join(dataset_path,train_id, "*lb.npy"))
+        
+        train_ct_list.sort()
+        train_lb_list.sort()
+        
+        val_ct_list = []
+        val_lb_list = []
+        for val_id in val_ids:
+            val_ct_list += glob.glob(os.path.join(dataset_path,val_id, "*ct.npy"))
+            val_lb_list += glob.glob(os.path.join(dataset_path,val_id, "*lb.npy"))
+        
+        val_ct_list.sort()
+        val_lb_list.sort()
 
-    train_pos_dir = args.root_dir + args.train_dir
-    val_pos_dir = args.root_dir + args.val_dir
 
-    train_ct_list = glob.glob(train_pos_dir + "/**/*ct.npy", recursive=True)
-    train_lb_list = glob.glob(train_pos_dir + "/**/*lb.npy", recursive=True)
-    train_ct_list.sort()
-    train_lb_list.sort()
-    print(len(train_ct_list), len(train_lb_list))
-
-    val_ct_list = glob.glob(val_pos_dir + "/**/*ct.npy", recursive=True)
-    val_lb_list = glob.glob(val_pos_dir + "/**/*lb.npy", recursive=True)
-    val_ct_list.sort()
-    val_lb_list.sort()
-    print(len(val_ct_list), len(val_lb_list))
-
-    train_gen = MyGenerator(train_ct_list, train_lb_list, batch_size=B, flip=1, alpha=0.2, beta=0.3, ws=[2000, 400, 600, 150])
-    val_gen = MyGenerator(val_ct_list, val_lb_list, batch_size=B, flip=0, alpha=0, beta=0, ws=[2000, 400, 600, 150])
+        train_gen = MyGenerator(train_ct_list, train_lb_list, batch_size=B, flip=1, alpha=0.2, beta=0.3, ws=[2000, 400, 600, 150])
+        val_gen = MyGenerator(val_ct_list, val_lb_list, batch_size=B, flip=0, alpha=0, beta=0, ws=[2000, 400, 600, 150])
 
 
-    ###########
-    ## Train ##
-    ###########
+        ###########
+        ## Train ##
+        ###########
 
-    train(train_gen, val_gen, args)
+        train(train_gen, val_gen, fold, args)
 
     print("Done")
 
@@ -152,10 +177,12 @@ def run(args):
 def get_args():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root_dir", type=str, default="/xxx/dir1")
-    parser.add_argument("--train_dir", type=str, default="/train")
-    parser.add_argument("--val_dir", type=str, default="/val")
-    parser.add_argument("--results_dir", type=str, default="./results_3d_unet")
+    parser.add_argument("-bd", "--base_dir", type=str, default="files/UNet/")
+    parser.add_argument("-dd", "--dataset_dir", type=str, default="scans/")
+    parser.add_argument("-rd", "--results_dir", type=str, default="results/")
+    parser.add_argument("-fp", "--folds_path", type=str, default="folds.json")
+    parser.add_argument("-b", "--batch_size", type=int)
+    
     args = parser.parse_args()
 
     d = args.results_dir
@@ -164,14 +191,7 @@ def get_args():
         if not (os.path.exists(i)):
             os.makedirs(i)
 
-    args.dt = datetime.datetime.now(pytz.timezone("Asia/Tokyo")).strftime('%Y%m%d_%H%M%S')
-    print(args.dt)
-
-    args.model_path = args.results_dir + "/models" + args.dt + ".h5"
-
     return args
-
-
 
 ##########
 ## Main ##

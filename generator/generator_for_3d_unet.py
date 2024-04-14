@@ -7,7 +7,7 @@ import random
 ## Util ##
 ##########
 
-def window_setting_and_normalize(im, w=2000, l=400):
+def window_setting_and_normalize(im, w=2000.0, l=400.0):
 
     if w == 2000 and l == 400:
         m = -15.42
@@ -62,9 +62,9 @@ def ricap(image_batch, label_batch, beta=0, use_same_random_value_on_batch=True)
         w_dash = np.random.beta(beta, beta, size=batch_size)
         h_dash = np.random.beta(beta, beta, size=batch_size)
         d_dash = np.random.beta(beta, beta, size=batch_size)
-    w = np.round(w_dash * image_x).astype(np.int32)
-    h = np.round(h_dash * image_y).astype(np.int32)
-    d = np.round(d_dash * image_z).astype(np.int32)
+    w = np.round(w_dash * image_x)
+    h = np.round(h_dash * image_y)
+    d = np.round(d_dash * image_z)
 
     # outputs
     output_images = np.zeros(image_batch.shape)

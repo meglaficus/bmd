@@ -1,5 +1,5 @@
 from keras.models import Model
-from keras.layers.merge import concatenate
+from keras.layers.merging import concatenate
 from keras.layers import Input, BatchNormalization, Activation, UpSampling3D, MaxPooling3D, Conv3D
 
 
