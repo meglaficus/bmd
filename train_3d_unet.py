@@ -122,10 +122,10 @@ def run(args):
     ## Prepare train_gen and test_gen ##
     ####################################
 
-    dataset_path = os.path.join(args.root_dir, args.val_dir)
+    dataset_path = os.path.join(args.base, args.dataset_dir)
     B = args.batch_size
     
-    json_path = os.path.join(args.root_dir, args.folds_path)
+    json_path = os.path.join(args.base_dir, args.folds_path)
     
     with open(json_path, 'r') as file:
         folds = json.load(file)
@@ -181,7 +181,7 @@ def get_args():
     parser.add_argument("-dd", "--dataset_dir", type=str, default="scans/")
     parser.add_argument("-rd", "--results_dir", type=str, default="results/")
     parser.add_argument("-fp", "--folds_path", type=str, default="folds.json")
-    parser.add_argument("-b", "--batch_size", type=int)
+    parser.add_argument("-b", "--batch_size", type=int, default=6)
     
     args = parser.parse_args()
 
