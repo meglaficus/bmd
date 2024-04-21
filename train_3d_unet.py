@@ -1,8 +1,8 @@
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras import backend as K
+from tensorflow.keras.optimizers import Adam # type: ignore
+from tensorflow.keras import backend as K # type: ignore
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger
 from keras.models import load_model
-from tensorflow.keras.utils import plot_model
+from tensorflow.keras.utils import plot_model # type: ignore
 import numpy as np
 import json
 import tensorflow as tf

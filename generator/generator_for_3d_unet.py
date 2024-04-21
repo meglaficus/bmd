@@ -1,5 +1,5 @@
 import numpy as np
-from tensorflow.keras.utils import Sequence
+from tensorflow.keras.utils import Sequence # type: ignore
 import random
 
 
