@@ -60,7 +60,7 @@ def focal_tversky_loss_08(y_true, y_pred):
 
 def train(train_gen, val_gen, fold, args):
 
-    LR = 1e-2
+    LR = 5e-3
     E = 360
     B = args.batch_size
 
@@ -210,7 +210,7 @@ if __name__ == '__main__':
     if gpus: 
         tf.config.set_logical_device_configuration(
             gpus[0],
-            [tf.config.LogicalDeviceConfiguration(memory_limit=4000)]
+            [tf.config.LogicalDeviceConfiguration(memory_limit=4096)]
         )
 
     logical_gpus = tf.config.list_logical_devices('GPU')
