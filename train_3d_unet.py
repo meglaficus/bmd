@@ -6,6 +6,7 @@ from tensorflow.keras.utils import plot_model
 import numpy as np
 import json
 import tensorflow as tf
+from misc.utils import PlotLogger
 
 from generator.generator_for_3d_unet import MyGenerator
 from build_models.unet_3d import build_unet
@@ -15,6 +16,7 @@ import os
 import glob
 import datetime
 import pytz
+
 
 
 #############
@@ -58,7 +60,7 @@ def focal_tversky_loss_08(y_true, y_pred):
 
 def train(train_gen, val_gen, fold, args):
 
-    LR = 0.0005
+    LR = 1e-2
     E = 360
     B = args.batch_size
 
@@ -81,6 +83,10 @@ def train(train_gen, val_gen, fold, args):
     csvlog_path = os.path.join(args.base_dir, args.results_dir, f'fold_{fold}', "log", time + ".csv")
     csv_logger = CSVLogger(csvlog_path)
     cs = cs + [csv_logger]
+    
+    pltlog_path = os.path.join(args.base_dir, args.results_dir, f'fold_{fold}', "learning_curves", time + ".png")
+    plot_logger = PlotLogger(csvlog_path, pltlog_path)
+    cs = cs + [plot_logger]
 
     
     model_path = args.base_dir + args.results_dir + f'/fold_{fold}' + "/models/" + time + ".keras"
@@ -88,15 +94,15 @@ def train(train_gen, val_gen, fold, args):
     mc = ModelCheckpoint(filepath=model_path, monitor="val_loss", save_best_only=True)
     cs = cs + [mc]
 
-    def step_decay(epoch):
-        x = LR
-        if epoch > E * 2 / 3:
-            x = LR / 10
-        if epoch > E * 8 / 9:
-            x = LR / 100
-        return x
+    def lr_scheduler(epoch):
+        initial_lr = LR  # Initial learning rate
+        exponent = 0.9
 
-    lrs = LearningRateScheduler(step_decay)
+        lr = initial_lr * (1 - epoch/ E) ** exponent
+        return lr
+
+
+    lrs = LearningRateScheduler(lr_scheduler)
     cs = cs + [lrs]
     
     steps_per_epoch = int( np.ceil(input_shape[0] / B) )
