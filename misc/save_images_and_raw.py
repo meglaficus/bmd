@@ -8,9 +8,9 @@ from misc.utils import read_dicom, grayscale_to_rgb
 
 def save_images(args, pt_name, a, label_info_array):
 
-    results_all_dir = args.results_dir + "All/" + pt_name + "/"
-    results_hit_dir = args.results_dir + "Hit/" + pt_name + "/"
-    results_center_dir = args.results_dir + "Center/" + pt_name + "/"
+    results_all_dir = args.base_dir + args.results_dir + "All/" + pt_name + "/"
+    results_hit_dir = args.base_dir + args.results_dir + "Hit/" + pt_name + "/"
+    results_center_dir = args.base_dir + args.results_dir + "Center/" + pt_name + "/"
     os.makedirs(results_all_dir, exist_ok=True)
     os.makedirs(results_hit_dir, exist_ok=True)
     os.makedirs(results_center_dir, exist_ok=True)

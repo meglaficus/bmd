@@ -1,8 +1,8 @@
-from keras.optimizers import Adam
+from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import backend as K
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger
 from keras.models import load_model
-from keras.utils import plot_model
+from tensorflow.keras.utils import plot_model
 import numpy as np
 import json
 import tensorflow as tf
@@ -82,8 +82,8 @@ def train(train_gen, val_gen, fold, args):
     csv_logger = CSVLogger(csvlog_path)
     cs = cs + [csv_logger]
 
-
-    model_path = args.results_dir + f'/fold_{fold}' + "/models/" + time + ".keras"
+    
+    model_path = args.base_dir + args.results_dir + f'/fold_{fold}' + "/models/" + time + ".keras"
     
     mc = ModelCheckpoint(filepath=model_path, monitor="val_loss", save_best_only=True)
     cs = cs + [mc]
@@ -105,9 +105,8 @@ def train(train_gen, val_gen, fold, args):
                                        validation_data=val_gen, callbacks=cs, verbose=1)
     K.clear_session()
 
-
-    model = load_model(args.model_path, custom_objects={"focal_tversky_loss_08": focal_tversky_loss_08, "dc": dc, "se": se})
-    score = model.evaluate_generator(val_gen)
+    model = load_model(model_path, custom_objects={"focal_tversky_loss_08": focal_tversky_loss_08, "dc": dc, "se": se})
+    score = model.evaluate(val_gen)
     print(score)
 
     return
@@ -129,47 +128,48 @@ def run(args):
     
     json_path = os.path.join(args.base_dir, args.folds_path)
     
+    fold = args.fold
+    
     with open(json_path, 'r') as file:
         folds = json.load(file)
     
-    # for each of 5 folds in split
-    for fold in range (5):
-        train_ids = folds[str(fold)]['train']
-        val_ids = folds[str(fold)]['val']
-        
-        train_ct_list = []
-        train_lb_list = []
-        for train_id in train_ids:
-            train_ct_list += glob.glob(os.path.join(dataset_path,train_id, "*ct.npy"))
-            train_lb_list += glob.glob(os.path.join(dataset_path,train_id, "*lb.npy"))
-        
-        train_ct_list.sort()
-        train_lb_list.sort()
-        
-        val_ct_list = []
-        val_lb_list = []
-        for val_id in val_ids:
-            val_ct_list += glob.glob(os.path.join(dataset_path,val_id, "*ct.npy"))
-            val_lb_list += glob.glob(os.path.join(dataset_path,val_id, "*lb.npy"))
-        
-        val_ct_list.sort()
-        val_lb_list.sort()
+    
+    train_ids = folds[str(fold)]['train']
+    val_ids = folds[str(fold)]['val']
+    
+    train_ct_list = []
+    train_lb_list = []
+    for train_id in train_ids:
+        train_ct_list += glob.glob(os.path.join(dataset_path,train_id, "*ct.npy"))
+        train_lb_list += glob.glob(os.path.join(dataset_path,train_id, "*lb.npy"))
+    
+    train_ct_list.sort()
+    train_lb_list.sort()
+    
+    val_ct_list = []
+    val_lb_list = []
+    for val_id in val_ids:
+        val_ct_list += glob.glob(os.path.join(dataset_path,val_id, "*ct.npy"))
+        val_lb_list += glob.glob(os.path.join(dataset_path,val_id, "*lb.npy"))
+    
+    val_ct_list.sort()
+    val_lb_list.sort()
 
 
-        train_gen = MyGenerator(train_ct_list, train_lb_list, batch_size=B, flip=1, alpha=0.2, beta=0.3, ws=[2000, 400, 600, 150])
-        val_gen = MyGenerator(val_ct_list, val_lb_list, batch_size=B, flip=0, alpha=0, beta=0, ws=[2000, 400, 600, 150])
+    train_gen = MyGenerator(train_ct_list, train_lb_list, batch_size=B, flip=1, alpha=0.2, beta=0.3, ws=[2000, 400, 600, 150])
+    val_gen = MyGenerator(val_ct_list, val_lb_list, batch_size=B, flip=0, alpha=0, beta=0, ws=[2000, 400, 600, 150])
 
-        d = os.path.join(args.base_dir, args.results_dir, f'fold_{fold}')
-        l = [d, d + "/log", d + "/models", d + "/learning_curves", d + "/predicted_images"]
-        for i in l:
-            if not (os.path.exists(i)):
-                os.makedirs(i)
-        
-        ###########
-        ## Train ##
-        ###########
+    d = os.path.join(args.base_dir, args.results_dir, f'fold_{fold}')
+    l = [d, d + "/log", d + "/models", d + "/learning_curves", d + "/predicted_images"]
+    for i in l:
+        if not (os.path.exists(i)):
+            os.makedirs(i)
+    
+    ###########
+    ## Train ##
+    ###########
 
-        train(train_gen, val_gen, fold, args)
+    train(train_gen, val_gen, fold, args)
 
     print("Done")
 
@@ -188,7 +188,8 @@ def get_args():
     parser.add_argument("-dd", "--dataset_dir", type=str, default="scans/")
     parser.add_argument("-rd", "--results_dir", type=str, default="results/")
     parser.add_argument("-fp", "--folds_path", type=str, default="folds.json")
-    parser.add_argument("-b", "--batch_size", type=int)
+    parser.add_argument("-b", "--batch_size", type=int, default=1)
+    parser.add_argument("-f", "--fold", type=int, default=0)
     
     args = parser.parse_args()
 
@@ -199,7 +200,16 @@ def get_args():
 ##########
 
 if __name__ == '__main__':
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus: 
+        tf.config.set_logical_device_configuration(
+            gpus[0],
+            [tf.config.LogicalDeviceConfiguration(memory_limit=4000)]
+        )
 
+    logical_gpus = tf.config.list_logical_devices('GPU')
+    print(len(gpus), "Physical GPU,", len(logical_gpus), "Logical GPUs")
+    
     args = get_args()
     print(args)
     run(args)
