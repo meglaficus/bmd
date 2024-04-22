@@ -16,40 +16,45 @@ class PlotLogger(Callback):
         self.plot_path = plot_path
 
     def on_epoch_end(self, epoch, logs=None):
+        
+        try:
 
-        # Load the CSV file
-        df = pd.read_csv(self.csv_path)
+            # Load the CSV file
+            df = pd.read_csv(self.csv_path)
 
-        # Get the list of columns
-        columns = df.columns
+            # Get the list of columns
+            columns = df.columns
 
-        # Calculate moving average with window size 10 for each column
-        df_ma = df.rolling(window=10).mean()
+            # Calculate moving average with window size 10 for each column
+            df_ma = df.rolling(window=10, min_periods=1).mean()
 
-        # Create subplots for the first three columns
-        fig, axs = plt.subplots(3, 1, figsize=(10, 18))
+            # Create subplots for the first three columns
+            fig, axs = plt.subplots(3, 1, figsize=(10, 18))
 
-        # Plot each column with moving average
-        for i, column in enumerate(columns[1:4]):
-            # Training data
-            axs[i].plot(df['epoch'], df_ma[column], label='Training ' + column + ' (Moving Average)', color='blue')
-            axs[i].plot(df['epoch'], df[column], label='Training ' + column, alpha=0.3, color='blue')  # Original data for reference
-            
-            # Validation data (if it exists)
-            val_column = 'val_' + column
-            if val_column in df.columns:
-                axs[i].plot(df['epoch'], df_ma[val_column], label='Validation ' + column + ' (Moving Average)', color='red')
-                axs[i].plot(df['epoch'], df[val_column], label='Validation ' + column, alpha=0.3, color='red',)  # Original data for reference
-            
-            axs[i].set_title(column)
-            axs[i].set_xlabel('Epoch')
-            axs[i].set_ylabel(column)
-            axs[i].legend()
-            axs[i].grid(True)
+            # Plot each column with moving average
+            for i, column in enumerate(columns[1:4]):
+                # Training data
+                axs[i].plot(df['epoch'], df_ma[column], label='Training ' + column + ' (Moving Average)', color='blue')
+                axs[i].plot(df['epoch'], df[column], label='Training ' + column, alpha=0.3, color='blue')  # Original data for reference
+                
+                # Validation data (if it exists)
+                val_column = 'val_' + column
+                if val_column in df.columns:
+                    axs[i].plot(df['epoch'], df_ma[val_column], label='Validation ' + column + ' (Moving Average)', color='red')
+                    axs[i].plot(df['epoch'], df[val_column], label='Validation ' + column, alpha=0.3, color='red',)  # Original data for reference
+                
+                axs[i].set_title(column)
+                axs[i].set_xlabel('Epoch')
+                axs[i].set_ylabel(column)
+                axs[i].legend()
+                axs[i].grid(True)
 
-        plt.tight_layout()
-        plt.savefig(self.plot_path)
-        plt.close()
+            plt.tight_layout()
+            plt.savefig(self.plot_path)
+            plt.close()
+        
+        except:
+            print("couldn't create plot, maybe next epoch!")
 
 
 class MyClass:

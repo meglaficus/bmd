@@ -1,81 +1,38 @@
 from tensorflow.keras.optimizers import Adam # type: ignore
+from tensorflow.keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger # type: ignore
+from tensorflow.keras.models import load_model # type: ignore
 from tensorflow.keras import backend as K # type: ignore
-from keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger
-from keras.models import load_model
-from tensorflow.keras.utils import plot_model # type: ignore
-import numpy as np
-import json
-import tensorflow as tf
+
 from misc.utils import PlotLogger
-
 from generator.generator_for_3d_unet import MyGenerator
-from build_models.unet_3d import build_unet
-
-import argparse
 import os
-import glob
 import datetime
-import pytz
+import numpy as np
+import tensorflow as tf
+
+# Metrics and Loss Functions
+from train_3d_unet import focal_tversky_loss_08, dc, se
+import glob
+import json
+import argparse
 
 
-
-#############
-## Metrics ##
-#############
-
-def dc(y_true, y_pred):
-    y_true = K.flatten(tf.cast(y_true, tf.float64))
-    y_pred = K.flatten(tf.cast(y_pred, tf.float64))
-    intersection = K.sum(y_true * y_pred)
-    return (2.0 * intersection + 1) / (K.sum(y_true) + K.sum(y_pred) + 1)
-
-def se(y_true, y_pred):
-    y_true = K.flatten(tf.cast(y_true, tf.float64))
-    y_pred = K.flatten(tf.cast(y_pred, tf.float64))
-    intersection = K.sum(y_true * y_pred)
-    return (intersection + 1) / (K.sum(y_true) + 1)
-
-def tversky_08(y_true, y_pred):
-    y_true_pos = K.flatten(tf.cast(y_true, tf.float64))
-    y_pred_pos = K.flatten(tf.cast(y_pred, tf.float64))
-    true_pos = K.sum(y_true_pos * y_pred_pos)
-    false_neg = K.sum(y_true_pos * (1 - y_pred_pos))
-    false_pos = K.sum((1 - y_true_pos) * y_pred_pos)
-    alpha = 0.8
-    return (true_pos + 1) / (true_pos + alpha * false_neg + (1 - alpha) * false_pos + 1)
-
-def tversky_loss_08(y_true, y_pred):
-    return 1 - tversky_08(y_true, y_pred)
-
-def focal_tversky_loss_08(y_true, y_pred):
-    pt_1 = tversky_08(y_true, y_pred)
-    gamma = 0.75
-    return K.pow((1 - pt_1), gamma)
-
-
-
-##########################
-## Training and Testing ##
-##########################
-
-def train(train_gen, val_gen, fold, args):
-
-    LR = 5e-3
-    E = 360
+# Function to load data and continue training
+def continue_training(train_gen, val_gen, fold, args):
+    # Load the saved model
+    model = load_model(args.saved_model_path, custom_objects={"focal_tversky_loss_08": focal_tversky_loss_08, "dc": dc, "se": se})
+    
+    # Define the optimizer and compile the model
+    LR = 0.0018 # fix for future
+    E = 600
     B = args.batch_size
 
     input_shape = train_gen.get_input_shape()
-
-    model = build_unet(input_shape)
-
-    model.summary()
     
-    path = os.path.join(args.base_dir, args.results_dir, f'fold_{fold}', "model.png")
-    plot_model(model, to_file=path, show_shapes=True, show_layer_names=True)
-
     model.compile(loss=focal_tversky_loss_08, optimizer=Adam(learning_rate=LR), metrics=[dc, se])
-
-    time = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    # fix this for later use
+    time = "20240421_130548"
     print(time)
     
     cs = []
@@ -88,16 +45,22 @@ def train(train_gen, val_gen, fold, args):
     cs = cs + [plot_logger]
 
     
-    model_path = args.base_dir + args.results_dir + f'/fold_{fold}' + "/models/" + time + ".keras"
+    model_path = args.base_dir + args.results_dir + f'/fold_{fold}' + "/models/" + time + "_best" + ".keras"
     
     mc = ModelCheckpoint(filepath=model_path, monitor="val_loss", save_best_only=True)
     cs = cs + [mc]
+    
+    model_path_latest = args.base_dir + args.results_dir + f'/fold_{fold}' + "/models/" + time + "_latest" + ".keras"
+    
+    
+    mc_latest = ModelCheckpoint(filepath=model_path_latest, monitor="val_loss", save_best_only=True)
+    cs = cs + [mc_latest]
 
     def lr_scheduler(epoch):
         initial_lr = LR  # Initial learning rate
         exponent = 0.9
 
-        lr = initial_lr * (1 - epoch/ E) ** exponent
+        lr = initial_lr * (1 - (epoch - args.initial_epoch)/ E) ** exponent
         return lr
 
 
@@ -107,7 +70,7 @@ def train(train_gen, val_gen, fold, args):
     steps_per_epoch = int( np.ceil(input_shape[0] / B) )
 
     model.fit(train_gen, epochs=E, steps_per_epoch=steps_per_epoch,
-                                       validation_data=val_gen, callbacks=cs, verbose=1)
+                                       validation_data=val_gen, callbacks=cs, verbose=1, initial_epoch=args.initial_epoch)
     K.clear_session()
 
     model = load_model(model_path, custom_objects={"focal_tversky_loss_08": focal_tversky_loss_08, "dc": dc, "se": se})
@@ -115,8 +78,7 @@ def train(train_gen, val_gen, fold, args):
     print(score)
 
     return
-
-
+    
 
 #########
 ## RUN ##
@@ -144,7 +106,6 @@ def run(args):
     
     train_ct_list = []
     train_lb_list = []
-    
     for train_id in train_ids:
         train_ct_list += glob.glob(os.path.join(dataset_path,train_id, "*ct.npy"))
         train_lb_list += glob.glob(os.path.join(dataset_path,train_id, "*lb.npy"))
@@ -175,7 +136,7 @@ def run(args):
     ## Train ##
     ###########
 
-    train(train_gen, val_gen, fold, args)
+    continue_training(train_gen, val_gen, fold, args)
 
     print("Done")
 
@@ -196,6 +157,8 @@ def get_args():
     parser.add_argument("-fp", "--folds_path", type=str, default="folds.json")
     parser.add_argument("-b", "--batch_size", type=int, default=1)
     parser.add_argument("-f", "--fold", type=int, default=0)
+    parser.add_argument("-ie", "--initial_epoch", type=int, default=360)
+    parser.add_argument("-mp", "--saved_model_path", type=str, default="")
     
     args = parser.parse_args()
 
@@ -206,16 +169,15 @@ def get_args():
 ##########
 
 if __name__ == '__main__':
-    # gpus = tf.config.list_physical_devices('GPU')
-    # if gpus: 
-    #     tf.config.set_logical_device_configuration(
-    #         gpus[0],
-    #         [tf.config.LogicalDeviceConfiguration(memory_limit=4096)]
-    #     )
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus: 
+        tf.config.set_logical_device_configuration(
+            gpus[0],
+            [tf.config.LogicalDeviceConfiguration(memory_limit=4096)]
+        )
 
-    # logical_gpus = tf.config.list_logical_devices('GPU')
-    # print(len(gpus), "Physical GPU,", len(logical_gpus), "Logical GPUs")
-    
+    logical_gpus = tf.config.list_logical_devices('GPU')
+    print(len(gpus), "Physical GPU,", len(logical_gpus), "Logical GPUs")
     args = get_args()
     print(args)
     run(args)

@@ -3,8 +3,9 @@ from keras.models import load_model
 from keras.optimizers import Adam
 from keras.utils import plot_model, to_categorical
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger
+import tensorflow as tf
 
-from misc.utils import pre, rec, F
+from misc.utils import pre, rec, F, PlotLogger
 from generator.generator_for_3d_resnet import MyGenerator
 from build_models.resnet_3d import build_resnet
 
@@ -15,6 +16,7 @@ import pytz
 import numpy as np
 import glob
 import random
+import json
 
 
 #################
@@ -22,10 +24,28 @@ import random
 #################
 
 def create_generators(args, B):
+    
+    dataset_path = os.path.join(args.base_dir, args.dataset_dir)
+    
+    pos_path = os.path.join(dataset_path, 'pos')
+    neg_path = os.path.join(dataset_path, 'neg')
+    
+    fold = args.fold
+    json_path = os.path.join(args.base_dir, args.folds_path)
+    
+    with open(json_path, 'r') as file:
+        folds = json.load(file)
+    
+    
+    train_ids = folds[str(fold)]['train']
+    val_ids = folds[str(fold)]['val']
 
-    ### Prepare training data ###
-    tr_pos_list = glob.glob(args.train_pos_dir + "/**/*.npy", recursive=True)
-    tr_neg_list = glob.glob(args.train_neg_dir + "/**/*.npy", recursive=True)
+    tr_pos_list = []
+    tr_neg_list = []
+    
+    for train_id in train_ids:
+        tr_pos_list += glob.glob(os.path.join(pos_path,train_id, "*ct.npy"))
+        tr_neg_list += glob.glob(os.path.join(neg_path,train_id, "*ct.npy"))
 
     random.shuffle(tr_neg_list)
     tr_neg_list = tr_neg_list[:(len(tr_pos_list) * 50)]
@@ -40,10 +60,14 @@ def create_generators(args, B):
 
     y_train = np.zeros(len(x_train))
     y_train[0:len(tr_pos_list)] = 1
-
-    ### Prepare validation data ###
-    val_pos_list = glob.glob(args.val_pos_dir + "/**/*.npy", recursive=True)
-    val_neg_list = glob.glob(args.val_neg_dir + "/**/*.npy", recursive=True)
+    
+    # --------------
+    val_pos_list = []
+    val_neg_list = []
+    
+    for val_id in val_ids:
+        val_pos_list += glob.glob(os.path.join(pos_path,val_id, "*ct.npy"))
+        val_neg_list += glob.glob(os.path.join(neg_path,val_id, "*ct.npy"))
 
     random.shuffle(val_neg_list)
     val_neg_list = val_neg_list[:(len(val_pos_list) * 50)]
@@ -55,9 +79,11 @@ def create_generators(args, B):
     print("len(val_neg_list)", len(val_neg_list))
 
     x_val = val_pos_list + val_neg_list
+
     y_val = np.zeros(len(x_val))
     y_val[0:len(val_pos_list)] = 1
-
+    
+    
     # Create generators.
     y_train = to_categorical(y_train)
     y_val = to_categorical(y_val)
@@ -72,31 +98,6 @@ def create_generators(args, B):
     return train_gen, val_gen
 
 
-def set_callbacks(args, E, LR):
-
-    cs = []
-    csvlog_path = args.results_dir + "/log/" + args.dt + ".csv"
-    csv_logger = CSVLogger(csvlog_path)
-    cs = cs + [csv_logger]
-
-    model_path = args.results_dir + "/models/" + args.dt + ".h5"
-    mc = ModelCheckpoint(filepath=model_path, monitor="val_loss", save_best_only=True)
-    cs = cs + [mc]
-
-    def step_decay(epoch):
-        x = LR
-        if epoch > E * 2 / 3:
-            x = LR / 10
-        if epoch > E * 8 / 9:
-            x = LR / 100
-        return x
-
-    lrs = LearningRateScheduler(step_decay)
-    cs = cs + [lrs]
-
-    return cs
-
-
 ###########
 ## Train ##
 ###########
@@ -104,9 +105,10 @@ def set_callbacks(args, E, LR):
 def run(args):
 
     LR = 0.004
-    E = 180
-    SPE = 1/120
-    B = 128
+    E = 360
+    B = 6
+    
+    fold = args.fold
 
     ### Prepare Generators ###
     train_gen, val_gen = create_generators(args, B)
@@ -115,21 +117,48 @@ def run(args):
     input_shape = train_gen.get_input_shape()
     model = build_resnet(input_shape)
     model.compile(optimizer=Adam(lr=0.004), loss="categorical_crossentropy", metrics=[pre, rec, F])
+    
+    time = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    print(time)
 
     model.summary()
-    path = args.results_dir + "model.png"
+    path = os.path.join(args.base_dir, args.results_dir, f'fold_{fold}', "model.png")
+
     plot_model(model, to_file=path, show_shapes=True, show_layer_names=True)
     print("Save model.png, done.")
 
     ### Set Callbacks ###
-    cs = set_callbacks(args, E, LR)
+    cs = []
+    csvlog_path = os.path.join(args.base_dir, args.results_dir, f'fold_{fold}', "log", time + ".csv")
+    csv_logger = CSVLogger(csvlog_path)
+    cs = cs + [csv_logger]
+    
+    pltlog_path = os.path.join(args.base_dir, args.results_dir, f'fold_{fold}', "learning_curves", time + ".png")
+    plot_logger = PlotLogger(csvlog_path, pltlog_path)
+    cs = cs + [plot_logger]
+
+    model_path = args.base_dir + args.results_dir + f'/fold_{fold}' + "/models/" + time + ".keras"
+    
+    mc = ModelCheckpoint(filepath=model_path, monitor="val_loss", save_best_only=True)
+    cs = cs + [mc]
+    
+    def lr_scheduler(epoch):
+        initial_lr = LR  # Initial learning rate
+        exponent = 0.9
+
+        lr = initial_lr * (1 - epoch/ E) ** exponent
+        return lr
+
+    lrs = LearningRateScheduler(lr_scheduler)
+    cs = cs + [lrs]
+    
+    steps_per_epoch = int( np.ceil(input_shape[0] / B) )
 
     ### Train ###
     print("Start training...")
-    model.fit_generator(train_gen, validation_data=val_gen, epochs=E, steps_per_epoch=len(train_gen) * SPE, callbacks=cs)
+    model.fit_generator(train_gen, validation_data=val_gen, epochs=E, steps_per_epoch=steps_per_epoch, callbacks=cs)
 
     ### Validate and Save ###
-    model_path = args.results_dir + "models/" + args.dt + ".h5"
     model = load_model(model_path, custom_objects={"pre": pre, "rec": rec, "F": F})
     score = model.evaluate_generator(val_gen)
     print(score)
@@ -141,15 +170,15 @@ def run(args):
 ## ArgumentParser ##
 ####################
 
-def set_args():
+def get_args():
 
-    parser = argparse.ArgumentParser(argument_default=argparse.SUPPRESS)
-    parser.add_argument("--root_dir", type=str, default="/xxx/dir2")
-    parser.add_argument("--train_pos_dir", type=str, default="/train_pos")
-    parser.add_argument("--train_neg_dir", type=str, default="/train_neg")
-    parser.add_argument("--val_pos_dir", type=str, default="/val_pos")
-    parser.add_argument("--val_neg_dir", type=str, default="/val_neg")
-    parser.add_argument("--results_dir", type=str, default="./results_3d_resnet")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-bd", "--base_dir", type=str, default="files/ResNet/")
+    parser.add_argument("-dd", "--dataset_dir", type=str, default="scans/")
+    parser.add_argument("-rd", "--results_dir", type=str, default="results/")
+    parser.add_argument("-fp", "--folds_path", type=str, default="folds.json")
+    parser.add_argument("-b", "--batch_size", type=int, default=1)
+    parser.add_argument("-f", "--fold", type=int, default=0)
     Args = parser.parse_args()
 
     Args.dt = datetime.datetime.now(pytz.timezone("Asia/Tokyo")).strftime('%Y%m%d_%H%M%S')
@@ -173,5 +202,16 @@ def set_args():
 
 if __name__ == '__main__':
 
-    Args = set_args()
-    run(Args)
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus: 
+        tf.config.set_logical_device_configuration(
+            gpus[0],
+            [tf.config.LogicalDeviceConfiguration(memory_limit=4096)]
+        )
+
+    logical_gpus = tf.config.list_logical_devices('GPU')
+    print(len(gpus), "Physical GPU,", len(logical_gpus), "Logical GPUs")
+    
+    args = get_args()
+    print(args)
+    run(args)
