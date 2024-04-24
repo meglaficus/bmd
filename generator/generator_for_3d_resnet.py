@@ -1,4 +1,4 @@
-from keras.utils import Sequence
+from tensorflow.keras.utils import Sequence
 from scipy.ndimage.interpolation import rotate
 import random
 import numpy as np
@@ -130,9 +130,6 @@ def ricap(image_batch, label_batch, beta=0, use_same_random_value_on_batch=True)
                      np.repeat(image_x, batch_size), np.repeat(image_y, batch_size), np.repeat(image_z, batch_size))
 
     return output_images, output_labels
-
-
-
 
 
 def xshift(im, x):

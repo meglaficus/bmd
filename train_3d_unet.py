@@ -60,7 +60,7 @@ def focal_tversky_loss_08(y_true, y_pred):
 
 def train(train_gen, val_gen, fold, args):
 
-    LR = 5e-3
+    LR = 5e-4
     E = 360
     B = args.batch_size
 
@@ -103,8 +103,8 @@ def train(train_gen, val_gen, fold, args):
 
     lrs = LearningRateScheduler(lr_scheduler)
     cs = cs + [lrs]
-    
-    steps_per_epoch = int( np.ceil(input_shape[0] / B) )
+    print(len(train_gen))
+    steps_per_epoch = len(train_gen)
 
     model.fit(train_gen, epochs=E, steps_per_epoch=steps_per_epoch,
                                        validation_data=val_gen, callbacks=cs, verbose=1)
@@ -206,15 +206,15 @@ def get_args():
 ##########
 
 if __name__ == '__main__':
-    # gpus = tf.config.list_physical_devices('GPU')
-    # if gpus: 
-    #     tf.config.set_logical_device_configuration(
-    #         gpus[0],
-    #         [tf.config.LogicalDeviceConfiguration(memory_limit=4096)]
-    #     )
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus: 
+        tf.config.set_logical_device_configuration(
+            gpus[0],
+            [tf.config.LogicalDeviceConfiguration(memory_limit=4096)]
+        )
 
-    # logical_gpus = tf.config.list_logical_devices('GPU')
-    # print(len(gpus), "Physical GPU,", len(logical_gpus), "Logical GPUs")
+    logical_gpus = tf.config.list_logical_devices('GPU')
+    print(len(gpus), "Physical GPU,", len(logical_gpus), "Logical GPUs")
     
     args = get_args()
     print(args)

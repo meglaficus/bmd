@@ -1,7 +1,7 @@
-from keras import backend as K
+from tensorflow.keras import backend as K
 from keras.models import load_model
-from keras.optimizers import Adam
-from keras.utils import plot_model, to_categorical
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.utils import plot_model, to_categorical
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler, CSVLogger
 import tensorflow as tf
 
@@ -23,7 +23,9 @@ import json
 ## Preparation ##
 #################
 
-def create_generators(args, B):
+def create_generators(args):
+    
+    B = args.batch_size
     
     dataset_path = os.path.join(args.base_dir, args.dataset_dir)
     
@@ -93,7 +95,6 @@ def create_generators(args, B):
 
     print("len(train_gen)", len(train_gen))
     print("len(val_gen)", len(val_gen))
-    print("steps_per_epoch", len(train_gen) / 120)
 
     return train_gen, val_gen
 
@@ -106,17 +107,23 @@ def run(args):
 
     LR = 0.004
     E = 360
-    B = 6
+    B = args.batch_size
     
     fold = args.fold
+    
+    d = os.path.join(args.base_dir, args.results_dir, f'fold_{fold}')
+    l = [d, d + "/log", d + "/models", d + "/learning_curves", d + "/predicted_images"]
+    for i in l:
+        if not (os.path.exists(i)):
+            os.makedirs(i)
 
     ### Prepare Generators ###
-    train_gen, val_gen = create_generators(args, B)
+    train_gen, val_gen = create_generators(args)
 
     ### Create Model ###
     input_shape = train_gen.get_input_shape()
     model = build_resnet(input_shape)
-    model.compile(optimizer=Adam(lr=0.004), loss="categorical_crossentropy", metrics=[pre, rec, F])
+    model.compile(optimizer=Adam(learning_rate=0.004), loss="categorical_crossentropy", metrics=[pre, rec, F])
     
     time = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     print(time)
@@ -152,11 +159,12 @@ def run(args):
     lrs = LearningRateScheduler(lr_scheduler)
     cs = cs + [lrs]
     
-    steps_per_epoch = int( np.ceil(input_shape[0] / B) )
+    steps_per_epoch = len(train_gen)
+    print(input_shape)
 
     ### Train ###
     print("Start training...")
-    model.fit_generator(train_gen, validation_data=val_gen, epochs=E, steps_per_epoch=steps_per_epoch, callbacks=cs)
+    model.fit(train_gen, validation_data=val_gen, epochs=E, steps_per_epoch=steps_per_epoch, callbacks=cs, verbose=1)
 
     ### Validate and Save ###
     model = load_model(model_path, custom_objects={"pre": pre, "rec": rec, "F": F})
@@ -177,23 +185,13 @@ def get_args():
     parser.add_argument("-dd", "--dataset_dir", type=str, default="scans/")
     parser.add_argument("-rd", "--results_dir", type=str, default="results/")
     parser.add_argument("-fp", "--folds_path", type=str, default="folds.json")
-    parser.add_argument("-b", "--batch_size", type=int, default=1)
+    parser.add_argument("-b", "--batch_size", type=int, default=20)
     parser.add_argument("-f", "--fold", type=int, default=0)
-    Args = parser.parse_args()
+    args = parser.parse_args()
 
-    Args.dt = datetime.datetime.now(pytz.timezone("Asia/Tokyo")).strftime('%Y%m%d_%H%M%S')
 
-    d = Args.results_dir
-    l = [d, d + "/log", d + "/models", d + "/learning_curves", d + "/csvs"]
-    for i in l:
-        os.makedirs(i, exist_ok=True)
 
-    Args.train_pos_dir = Args.root_dir + Args.val_pos_dir
-    Args.train_neg_dir = Args.root_dir + Args.val_neg_dir
-    Args.val_pos_dir = Args.root_dir + Args.val_pos_dir
-    Args.val_neg_dir = Args.root_dir + Args.val_neg_dir
-
-    return Args
+    return args
 
 
 ##########
